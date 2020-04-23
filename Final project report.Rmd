@@ -1,0 +1,186 @@
+---
+title: "Final project report"
+author: "Siting Lin, Nitin Jenson， Brittnie "
+output: html_notebook
+---
+
+### Research Question:
+
+
+How do external, geographic factors, and pre-existing medical conditions affect the number of cases and death rates from the Coronavirus infection?
+
+### Primary data:
+https://www.worldometers.info/coronavirus/
+### Second data:
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3551445/
+https://www.kaggle.com/folaraz/world-countries-and-continents-details
+
+
+
+
+```{r}
+#load all packages needed
+library(tidyverse)
+library(ggplot2)
+library(DataComputing)
+library(rworldmap)
+library(mosaic)
+library(readr)
+```
+
+```{r}
+#load primary data, since this data will be uploaded everday, so we choose the day that we finish preliminary as the last day
+file_name <- file.choose() 
+Worldmeters_data <- 
+  data.table::fread(file_name)  
+
+Worldmeters_data
+
+file_name2 <- file.choose() 
+ICUnumbers <- 
+  data.table::fread(file_name2)  
+ICUnumbers
+
+file_name3 <- file.choose() 
+Continents <- 
+  data.table::fread(file_name3)  
+Continents
+```
+
+
+```{r}
+#clean the data going to use
+ICUnew<-
+  ICUnumbers%>%
+  rename(Healthcare_cost='Per Capita Healthcare Cost**')%>% #rename the variable's name for easy use
+  mutate(Healthcare_cost= gsub(pattern = "[$]", replacement = " ",Healthcare_cost))%>% #edit all regular expression
+  rename('ICUbeds'='ICU beds per 100,000 people')#For easy use, abbreviate the variable's name
+ICUnew
+#rename the variables in the data frame that make the variable names easy to use, and arrange the variables that going to use next
+Worldnew<- 
+  Worldmeters_data%>%
+  rename(Total_Cases=`Total Cases`)%>%
+  rename(Total_Death=`Total Deaths`)%>%
+  rename(Total_Recovered ='Total Recovered')%>%
+  rename(Total_Tests = `Total Tests`)%>%
+  select(Country, Total_Cases, Total_Death,Total_Recovered,Total_Tests)
+Worldnew
+
+Continent_new<-
+  Continents%>%
+  select(name, Continent)%>%
+  rename(Country = name)
+Continent_new
+
+```
+```{r}
+#convert all characters to integers or numbers that can be used next.And join two sources together
+Combine_data<-
+  ICUnew%>%
+  inner_join(Worldnew,by="Country")%>%
+  filter(!Country == "Zambia")%>% # Zambia's data is not available now, so delete it
+  mutate(Total_Cases = parse_number(Total_Cases))%>%
+  mutate(Total_Death = parse_number(Total_Death))%>%
+  mutate(Total_Recovered = parse_number(Total_Recovered))%>%
+  mutate(Total_Tests = parse_number(Total_Tests))%>%
+  mutate(Healthcare_cost = parse_number(Healthcare_cost))
+  
+Combine_data
+
+```
+
+
+# The relationship between external factors and pre_existing medical conditions
+We are going to explore the relationship between external factors, such as healthcare cost, pre-existing medical conditions(ICU numers of 100000 people)and confirmed cases, death rate.
+### step 1:The relationship between ICU numbers, death rate (pre_existing medical conditions)
+The reason that choose ICU numbers avaerage of countries(of 100000 people) is that large population who comfired coronavirus can cured by their own immune system, and some of the cases who are serious will be tranfered to ICU that can provide better medical service. Therefore, we assume that the numbers of ICU beds in different countries and the death rate may have relationship,and we are going to explore that using the data.
+```{r}
+#add the new variables named death rate
+ICU_Death_Rela<-
+  Combine_data%>%
+  select(ICUbeds,Total_Death,Total_Cases,Country)%>%
+  mutate(Deathrate = Total_Death/Total_Cases)
+#When we check the numers of 
+#ggplot the relationship between death rate and ICUbeds numbers in specific countries
+ggplot(data = ICU_Death_Rela, aes(x = ICUbeds, y = Deathrate))+
+  geom_point(aes(color = Country))
+```
+
+The data is a little bit small, so there is no obivious relationship between death rate and ICU numbers average, However, if we try to exclude some outliers, that is constrain the range of ICUbed from 5 to 10(of 100000 people), we can find something
+
+
+```{r}
+ggplot(data = ICU_Death_Rela, aes(x = ICUbeds, y = Deathrate))+
+  geom_point(aes(color = Country))+
+  xlim(5,10)
+```
+
+When we regulate the range of ICUbed, there is a really obviously decresing(negative) relationship between death rate and ICUbeds(rate).
+### step2: The relationship between healthcare cost average and total comfirmed cases.
+Since the tests that comfirmed the infection of CoronaVirus are expensive for most population, the countries that have higher healthcare cost may afford more tests for their population. We assume there is a relationship between total tests and healthcare cost in each countries.
+
+```{r}
+Health_Test_Rela<-
+  Combine_data%>%
+  select(Country, Healthcare_cost, Total_Tests)%>%
+  mutate(Total_Tests_rate = Total_Tests/100)# for better illustrate in graph, we changed the variable of total tests to the tests rate of 100 people
+ggplot(data = Health_Test_Rela, aes(x = Total_Tests_rate, y = Healthcare_cost))+
+  geom_point(aes(color = Country))
+```
+
+According to the graph shown above, there is no obivious relationship between total tests rate and healthcare cost.
+
+# The relationship between geographic factor and numbers of cases comfirmed
+
+```{r}
+Totalcases<-
+  Worldnew%>%
+  select(Country,Total_Cases)%>%
+  filter(Country == "R<a8><a6>union")
+WorldMap(Totalcases, key = Country, fill = Total_Cases)
+```
+
+
+For futher exploring the relationship between geographic factor(continents) and total cases comfirmed, we are going to make a graph. 
+
+```{r}
+Con_Case_Rela<-
+  Continent_new%>%
+  inner_join(Worldnew)%>%
+  mutate(Total_Cases = parse_number(Total_Cases))%>%
+  mutate(Total_Death = parse_number(Total_Death))%>%
+  filter(!Total_Death =="NA")%>%
+  group_by(Continent)%>%
+  summarise(Total_Cases_conti = sum(Total_Cases),
+            Total_Death_conti = sum(Total_Death))%>%
+  mutate(Deathrate_conti = Total_Death_conti/Total_Cases_conti)
+ggplot(data = Con_Case_Rela, aes(x = Deathrate_conti, y = Total_Cases_conti))+
+  geom_point(aes(color = Continent))
+Con_Case_Rela
+```
+
+
+According to the graph above, we can know that there is a largeer population in Asia got comfirmed. Other total cases in each Continent are similar. However, there is a outlier which is Europe showing a really high death rate.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
